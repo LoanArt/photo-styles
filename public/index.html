@@ -1,49 +1,88 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Transforme ta photo</title>
-  <style>
-    body { font-family: system-ui, sans-serif; background: #faf7f2; text-align: center; padding: 30px; }
-    .box { max-width: 500px; margin: auto; background: white; padding: 25px; border-radius: 16px; box-shadow: 0 4px 20px #0001; }
-    select, input, button { width: 100%; margin: 10px 0; padding: 12px; font-size: 16px; border-radius: 10px; border: 1px solid #ddd; }
-    button { background: #6c4cff; color: white; border: none; cursor: pointer; }
-    img { max-width: 100%; border-radius: 12px; margin-top: 15px; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Photo Styles</title>
+<style>
+*{box-sizing:border-box;margin:0}
+body{font-family:system-ui,-apple-system,sans-serif;background:#0f0c1d;color:#f3f0ff;min-height:100vh;display:flex;justify-content:center;padding:32px 16px}
+.card{width:100%;max-width:440px;background:#1a1530;border:1px solid #2e2650;border-radius:20px;padding:24px;height:fit-content}
+h1{font-size:30px;background:linear-gradient(90deg,#ff7ac6,#8b7bff);-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{color:#a99fd0;margin:6px 0 20px}
+.drop{display:flex;align-items:center;justify-content:center;min-height:180px;border:2px dashed #3d3466;border-radius:14px;cursor:pointer;overflow:hidden;color:#a99fd0;text-align:center;padding:12px}
+.drop img{max-width:100%;max-height:320px;border-radius:10px}
+input[type=file]{display:none}
+select,button,a.dl{display:block;width:100%;margin-top:14px;padding:14px;border-radius:12px;font-size:16px;border:none}
+select{background:#241d42;color:#f3f0ff;border:1px solid #3d3466}
+button{background:linear-gradient(90deg,#ff7ac6,#8b7bff);color:#fff;font-weight:700}
+button:disabled{opacity:.5}
+#msg{margin-top:14px;text-align:center;color:#a99fd0;min-height:20px}
+#result img{width:100%;border-radius:14px;margin-top:14px}
+a.dl{text-align:center;background:#241d42;color:#f3f0ff;text-decoration:none}
+</style>
 </head>
 <body>
-  <div class="box">
-    <h1>Transforme ta photo ✨</h1>
-    <input type="file" id="photo" accept="image/*">
-    <select id="style">
-      <option value="vangogh">Peinture à l'huile tourbillonnante</option>
-      <option value="anime">Animé japonais aquarelle</option>
-      <option value="bic">Stylo bic</option>
-      <option value="encre">Encre de Chine</option>
-      <option value="jeuvideo">Jeu vidéo néon</option>
-    </select>
-    <button id="go">Transformer</button>
-    <p id="status"></p>
-    <img id="result">
-    <a id="dl" download="ma-photo.png" style="display:none">Télécharger</a>
-  </div>
-  <script>
-    document.getElementById("go").onclick = async () => {
-      const file = document.getElementById("photo").files[0];
-      if (!file) return alert("Choisis une photo !");
-      const data = new FormData();
-      data.append("photo", file);
-      data.append("style", document.getElementById("style").value);
-      document.getElementById("status").textContent = "Transformation en cours… (≈30 s)";
-      const res = await fetch("/transform", { method: "POST", body: data });
-      const json = await res.json();
-      if (json.error) return document.getElementById("status").textContent = json.error;
-      document.getElementById("status").textContent = "";
-      document.getElementById("result").src = json.image;
-      const dl = document.getElementById("dl");
-      dl.href = json.image; dl.style.display = "block";
-    };
-  </script>
+<div class="card">
+  <h1>Photo Styles</h1>
+  <p class="sub">Transforme ta photo dans le style de ton choix ✨</p>
+  <label class="drop" id="drop"><span>📷 Appuie pour choisir une photo</span><input type="file" id="photo" accept="image/*"></label>
+  <select id="style"></select>
+  <button id="go" disabled>Transformer</button>
+  <div id="msg"></div>
+  <div id="result"></div>
+</div>
+<script>
+const photo = document.getElementById("photo");
+const drop = document.getElementById("drop");
+const sel = document.getElementById("style");
+const go = document.getElementById("go");
+const msg = document.getElementById("msg");
+const result = document.getElementById("result");
+
+fetch("/styles").then(r => r.json()).then(groups => {
+  for (const g of groups) {
+    const og = document.createElement("optgroup");
+    og.label = g.name;
+    for (const s of g.styles) {
+      const o = document.createElement("option");
+      o.value = s.id;
+      o.textContent = s.label;
+      og.appendChild(o);
+    }
+    sel.appendChild(og);
+  }
+});
+
+photo.onchange = () => {
+  const f = photo.files[0];
+  if (!f) return;
+  drop.innerHTML = "";
+  const img = document.createElement("img");
+  img.src = URL.createObjectURL(f);
+  drop.appendChild(img);
+  drop.appendChild(photo);
+  go.disabled = false;
+};
+
+go.onclick = async () => {
+  const fd = new FormData();
+  fd.append("photo", photo.files[0]);
+  fd.append("style", sel.value);
+  go.disabled = true;
+  result.innerHTML = "";
+  msg.textContent = "⏳ Transformation en cours… (30 s à 1 min)";
+  try {
+    const r = await fetch("/transform", { method: "POST", body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    result.innerHTML = '<img src="' + d.image + '"><a class="dl" href="' + d.image + '" download="photo-style.png">⬇️ Télécharger</a>';
+    msg.textContent = "";
+  } catch (e) {
+    msg.textContent = "❌ " + (e.message || "Erreur");
+  }
+  go.disabled = false;
+};
+</script>
 </body>
 </html>
