@@ -1,10 +1,10 @@
 (function () {
   const PLANS = ["unit", "pack", "sub"];
   const params = new URLSearchParams(location.search);
-  if (params.get("session_id")) {
-    localStorage.setItem("mz_pass", params.get("session_id"));
-    history.replaceState(null, "", "/#studio");
-  }
+  if (params.get("session_id")) localStorage.setItem("mz_pass", params.get("session_id"));
+  if (params.get("code")) localStorage.setItem("mz_admin", params.get("code").trim());
+  if (params.get("session_id") || params.get("code")) history.replaceState(null, "", "/#studio");
+
   const getPass = () => localStorage.getItem("mz_pass") || "";
   const getAdmin = () => localStorage.getItem("mz_admin") || "";
 
@@ -28,28 +28,41 @@
     };
   });
 
-  const bar = document.createElement("p");
-  bar.className = "chosen";
-  document.querySelector("#studio .panel").appendChild(bar);
+  const panel = document.querySelector("#studio .panel");
+
+  const info = document.createElement("p");
+  info.className = "chosen";
+  panel.appendChild(info);
+
+  const box = document.createElement("div");
+  box.style.cssText = "display:flex;gap:8px;margin-top:12px";
+  box.innerHTML =
+    '<input id="mzcode" type="text" placeholder="Code d\'accès" autocomplete="off" ' +
+    'style="flex:1;padding:12px;border-radius:12px;border:1px solid #2a2244;background:#0d0a18;color:#f4f1ff;font-size:16px">' +
+    '<button id="mzok" type="button" class="btn btn-ghost" style="padding:12px 18px">Valider</button>';
+  panel.appendChild(box);
+
+  document.getElementById("mzok").addEventListener("click", () => {
+    localStorage.setItem("mz_admin", document.getElementById("mzcode").value.trim());
+    refresh();
+  });
 
   async function refresh() {
     try {
       const r = await fetch("/credits?pass=" + encodeURIComponent(getPass()) + "&admin=" + encodeURIComponent(getAdmin()));
       const d = await r.json();
-      bar.innerHTML = d.admin
-        ? "🔓 Accès admin : illimité"
-        : d.left > 0
-          ? "💎 Crédits restants : " + d.left + ""
-          : 'Aucun crédit — voir les tarifs';
+      if (d.admin) {
+        info.innerHTML = "🔓 <b>Accès admin : illimité</b>";
+        box.style.display = "none";
+      } else {
+        info.innerHTML = d.left > 0
+          ? "💎 Crédits restants : <b>" + d.left + "</b>"
+          : 'Aucun crédit — <a href="#prix" style="color:#ff6ec4;text-decoration:underline">voir les tarifs</a>';
+        box.style.display = "flex";
+      }
     } catch (e) {
-      bar.innerHTML = "";
+      info.textContent = "";
     }
-    bar.innerHTML += ' · J\'ai un code';
-    document.getElementById("mzcode").onclick = (e) => {
-      e.preventDefault();
-      const c = prompt("Ton code :");
-      if (c !== null) { localStorage.setItem("mz_admin", c.trim()); refresh(); }
-    };
   }
   refresh();
 
@@ -64,7 +77,7 @@
     fd.append("admin", getAdmin());
     go.disabled = true;
     dlbox.innerHTML = "";
-    out.innerHTML = ' Création de ton œuvre… 30 s à 1 min';
+    out.innerHTML = '<div><div class="loader"></div>Création de ton œuvre…<br><small>30 s à 1 min</small></div>';
     out.scrollIntoView({ behavior: "smooth", block: "center" });
     try {
       const r = await fetch("/transform", { method: "POST", body: fd });
@@ -75,8 +88,8 @@
       } else if (!r.ok) {
         throw new Error(d.error);
       } else {
-        out.innerHTML = '';
-        dlbox.innerHTML = '⬇️ Télécharger';
+        out.innerHTML = '<img src="' + d.image + '">';
+        dlbox.innerHTML = '<a class="btn btn-main" href="' + d.image + '" download="metamorphoz.png">⬇️ Télécharger</a>';
       }
     } catch (e) {
       out.textContent = "❌ " + (e.message || "Une erreur est survenue");
