@@ -1,11 +1,14 @@
 import express from "express";
 import multer from "multer";
 import OpenAI, { toFile } from "openai";
+import Stripe from "stripe";
 import "dotenv/config";
 
 const app = express();
 const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const ADMIN = process.env.ADMIN_CODE;
 
 const KEEP = " Keep the same composition, framing, pose and recognizable faces.";
 
@@ -56,6 +59,13 @@ const GROUPS = {
 
 const PROMPTS = Object.fromEntries(Object.values(GROUPS).flat().map(([id, , p]) => [id, p]));
 
+const PLANS = {
+  unit: { name: "Métamorphoz — 1 image", amount: 199, credits: 1, mode: "payment" },
+  pack: { name: "Métamorphoz — Pack 10 images", amount: 999, credits: 10, mode: "payment" },
+  sub:  { name: "Métamorphoz — Abonnement 30 images/mois", amount: 999, credits: 30, mode: "subscription" }
+};
+
+app.use(express.json());
 app.use(express.static("public"));
 
 app.get("/styles", (req, res) => {
@@ -65,10 +75,67 @@ app.get("/styles", (req, res) => {
   })));
 });
 
+app.post("/checkout", async (req, res) => {
+  try {
+    const plan = PLANS[req.body.plan];
+    if (!plan) return res.status(400).json({ error: "Offre inconnue" });
+    const origin = req.headers.origin || "https://" + req.headers.host;
+    const price_data = { currency: "eur", unit_amount: plan.amount, product_data: { name: plan.name } };
+    if (plan.mode === "subscription") price_data.recurring = { interval: "month" };
+    const session = await stripe.checkout.sessions.create({
+      mode: plan.mode,
+      line_items: [{ price_data, quantity: 1 }],
+      metadata: { plan: req.body.plan },
+      success_url: origin + "/?session_id={CHECKOUT_SESSION_ID}",
+      cancel_url: origin + "/#prix"
+    });
+    res.json({ url: session.url });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Impossible d'ouvrir le paiement" });
+  }
+});
+
+async function getPass(id) {
+  if (!id || !id.startsWith("cs_")) return null;
+  const s = await stripe.checkout.sessions.retrieve(id, { expand: ["payment_intent", "subscription"] });
+  const plan = PLANS[s.metadata?.plan];
+  if (!plan || s.payment_status !== "paid") return null;
+
+  if (plan.mode === "payment") {
+    const pi = s.payment_intent;
+    const used = parseInt(pi.metadata.used || "0");
+    return { left: plan.credits - used, use: () => stripe.paymentIntents.update(pi.id, { metadata: { used: String(used + 1) } }) };
+  }
+
+  const sub = s.subscription;
+  if (!sub || !["active", "trialing"].includes(sub.status)) return null;
+  const period = String(sub.current_period_start ?? sub.items.data[0].current_period_start);
+  const used = sub.metadata.period === period ? parseInt(sub.metadata.used || "0") : 0;
+  return { left: plan.credits - used, use: () => stripe.subscriptions.update(sub.id, { metadata: { period, used: String(used + 1) } }) };
+}
+
+app.get("/credits", async (req, res) => {
+  try {
+    if (ADMIN && req.query.admin === ADMIN) return res.json({ admin: true });
+    const pass = await getPass(req.query.pass);
+    res.json({ left: pass ? Math.max(0, pass.left) : 0 });
+  } catch (e) {
+    res.json({ left: 0 });
+  }
+});
+
 app.post("/transform", upload.single("photo"), async (req, res) => {
   try {
     const style = PROMPTS[req.body.style];
     if (!req.file || !style) return res.status(400).json({ error: "Photo ou style manquant" });
+
+    const isAdmin = ADMIN && req.body.admin === ADMIN;
+    let pass = null;
+    if (!isAdmin) {
+      pass = await getPass(req.body.pass);
+      if (!pass || pass.left <= 0) return res.status(402).json({ error: "Tu n'as plus de crédits. Choisis une offre pour continuer !" });
+    }
 
     const image = await toFile(req.file.buffer, req.file.originalname, { type: req.file.mimetype });
     const result = await openai.images.edit({
@@ -79,6 +146,7 @@ app.post("/transform", upload.single("photo"), async (req, res) => {
       quality: "medium"
     });
 
+    if (pass) await pass.use();
     res.json({ image: `data:image/png;base64,${result.data[0].b64_json}` });
   } catch (e) {
     console.error(e);
