@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Transforme ta photo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #faf7f2; text-align: center; padding: 30px; }
+    .box { max-width: 500px; margin: auto; background: white; padding: 25px; border-radius: 16px; box-shadow: 0 4px 20px #0001; }
+    select, input, button { width: 100%; margin: 10px 0; padding: 12px; font-size: 16px; border-radius: 10px; border: 1px solid #ddd; }
+    button { background: #6c4cff; color: white; border: none; cursor: pointer; }
+    img { max-width: 100%; border-radius: 12px; margin-top: 15px; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>Transforme ta photo ✨</h1>
+    <input type="file" id="photo" accept="image/*">
+    <select id="style">
+      <option value="vangogh">Peinture à l'huile tourbillonnante</option>
+      <option value="anime">Animé japonais aquarelle</option>
+      <option value="bic">Stylo bic</option>
+      <option value="encre">Encre de Chine</option>
+      <option value="jeuvideo">Jeu vidéo néon</option>
+    </select>
+    <button id="go">Transformer</button>
+    <p id="status"></p>
+    <img id="result">
+    <a id="dl" download="ma-photo.png" style="display:none">Télécharger</a>
+  </div>
+  <script>
+    document.getElementById("go").onclick = async () => {
+      const file = document.getElementById("photo").files[0];
+      if (!file) return alert("Choisis une photo !");
+      const data = new FormData();
+      data.append("photo", file);
+      data.append("style", document.getElementById("style").value);
+      document.getElementById("status").textContent = "Transformation en cours… (≈30 s)";
+      const res = await fetch("/transform", { method: "POST", body: data });
+      const json = await res.json();
+      if (json.error) return document.getElementById("status").textContent = json.error;
+      document.getElementById("status").textContent = "";
+      document.getElementById("result").src = json.image;
+      const dl = document.getElementById("dl");
+      dl.href = json.image; dl.style.display = "block";
+    };
+  </script>
+</body>
+</html>
