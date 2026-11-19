@@ -23,7 +23,7 @@ app.post("/transform", upload.single("photo"), async (req, res) => {
     if (!req.file || !prompt) return res.status(400).json({ error: "Photo ou style manquant" });
 
     const image = await toFile(req.file.buffer, req.file.originalname, { type: req.file.mimetype });
-    const result = await openai.images.edit({ model: "gpt-image-1", image, prompt, size: "1024x1024" });
+    const result = await openai.images.edit({ model: "gpt-image-1-mini", image, prompt, size: "1024x1024" });
 
     res.json({ image: `data:image/png;base64,${result.data[0].b64_json}` });
   } catch (e) {
